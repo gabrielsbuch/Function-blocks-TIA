@@ -1,0 +1,58 @@
+﻿FUNCTION_BLOCK "mapping_analogic_input"
+TITLE = Speed control S7 to SINAMICS using Standardtelegram 352
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : SIEMENS
+FAMILY : DRIVES
+NAME : SINA_SPD_TLG352
+VERSION : 1.0
+//The function block SINA_SPEED_TLG352 controls a SINAMICS drive using SIEMENS telegram 352
+   VAR_INPUT 
+      HWIDZSW : HW_IO;   // Hardware Identifer actual value slot
+   END_VAR
+
+   VAR_OUTPUT 
+      "analogic_In 1" : Real;
+      "analogic_In 2" : Real;
+      "analogic_In 3" : Real;
+      "analogic_In 4" : Real;
+   END_VAR
+
+   VAR 
+      diagId : Int;   // Error codes of the system function blocks DPWR / DPRD_DAT
+   END_VAR
+
+   VAR_TEMP 
+      tempRecvBuf : Array[0..3] of Word;   // Receive buffer
+      aux_ai1 : Real;
+      aux_ai2 : Real;
+      aux_ai3 : Real;
+      aux_ai4 : Real;
+   END_VAR
+
+
+BEGIN
+	// Receive telegram from drive
+	#diagId := DPRD_DAT(LADDR := #HWIDZSW,
+	                    RECORD => #tempRecvBuf);
+	
+	// Analyse ZSW1
+	
+	//AI 1
+	#aux_ai1 := NORM_X(MIN := 0, VALUE := #tempRecvBuf[0], MAX := 27648);
+	#"analogic_In 1" := SCALE_X(MIN := 0, VALUE := #aux_ai1, MAX := 100);
+	
+	//AI 2
+	#aux_ai2 := NORM_X(MIN := 0, VALUE := #tempRecvBuf[1], MAX := 27648);
+	#"analogic_In 2" := SCALE_X(MIN := 0, VALUE := #aux_ai2, MAX := 100);
+	
+	
+	//AI 3
+	#aux_ai3 := NORM_X(MIN := 0, VALUE := #tempRecvBuf[2], MAX := 27648);
+	#"analogic_In 3" := SCALE_X(MIN := 0, VALUE := #aux_ai3, MAX := 100);
+	
+	
+	//AI 1
+	#aux_ai4 := NORM_X(MIN := 0, VALUE := #tempRecvBuf[3], MAX := 27648);
+	#"analogic_In 4" := SCALE_X(MIN := 0, VALUE := #aux_ai4, MAX := 100);
+END_FUNCTION_BLOCK
+

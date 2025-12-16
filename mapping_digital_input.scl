@@ -1,0 +1,69 @@
+﻿FUNCTION_BLOCK "mapping_digital_input"
+TITLE = Speed control S7 to SINAMICS using Standardtelegram 352
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : SIEMENS
+FAMILY : DRIVES
+NAME : SINA_SPD_TLG352
+VERSION : 1.0
+//The function block SINA_SPEED_TLG352 controls a SINAMICS drive using SIEMENS telegram 352
+   VAR_INPUT 
+      HWIDZSW : HW_IO;   // Hardware Identifer actual value slot
+   END_VAR
+
+   VAR_OUTPUT 
+      "input 1" : Bool;
+      "input 2" : Bool;
+      "input 3" : Bool;
+      "input 4" : Bool;
+      "input 5" : Bool;
+      "input 6" : Bool;
+      "input 7" : Bool;
+      "input 8" : Bool;
+      "input 9" : Bool;
+      "input 10" : Bool;
+      "input 11" : Bool;
+      "input 12" : Bool;
+      "input 13" : Bool;
+      "input 14" : Bool;
+      "input 15" : Bool;
+      "input 16" : Bool;
+   END_VAR
+
+   VAR 
+      diagId : Int;   // Error codes of the system function blocks DPWR / DPRD_DAT
+   END_VAR
+
+   VAR_TEMP 
+      tempRecvBuf : Word;   // Receive buffer
+   END_VAR
+
+
+BEGIN
+	
+	// Receive telegram from drive
+	#diagId := DPRD_DAT(LADDR := #HWIDZSW,
+	                    RECORD => #tempRecvBuf);
+	
+	
+	// Analyse ZSW1
+	#"input 1" := #tempRecvBuf.%X8;
+	#"input 2" := #tempRecvBuf.%X9;
+	#"input 3" := #tempRecvBuf.%X10;
+	#"input 4" := #tempRecvBuf.%X11;
+	#"input 5" := #tempRecvBuf.%X12;
+	#"input 6" := #tempRecvBuf.%X13;
+	#"input 7" := #tempRecvBuf.%X14;
+	#"input 8" := #tempRecvBuf.%X15;
+	
+	#"input 9" := #tempRecvBuf.%X0;
+	#"input 10" := #tempRecvBuf.%X1;
+	#"input 11" := #tempRecvBuf.%X2;
+	#"input 12" := #tempRecvBuf.%X3;
+	#"input 13" := #tempRecvBuf.%X4;
+	#"input 14" := #tempRecvBuf.%X5;
+	#"input 15" := #tempRecvBuf.%X6;
+	#"input 16" := #tempRecvBuf.%X7;
+	
+	
+END_FUNCTION_BLOCK
+
