@@ -1,0 +1,207 @@
+﻿FUNCTION_BLOCK "G120_Ctrl"
+{ S7_Optimized_Access := 'TRUE' }
+AUTHOR : SIEMENS
+FAMILY : DRIVES
+NAME : SINA_SPD_TLG352
+VERSION : 1.0
+   VAR_INPUT 
+      safety : Bool;
+      ack : Bool;
+      fwd : Bool;
+      bwd : Bool;
+      speedSp : DInt;
+      HWID : HW_IO;
+   END_VAR
+
+   VAR_OUTPUT 
+      axisEnabled : Bool;
+      lockout : Bool;
+      error : Bool;
+      actSpeed : DInt;
+      actCurrent : DInt;
+      warnCode : UInt;
+      faultCode : UInt;
+   END_VAR
+
+   VAR 
+      diagId : Int;
+      status : Int;
+      tempRecvBuf_display { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[0..5] of Word;
+      testeamp : Real;
+      testerpm : Real;
+   END_VAR
+
+   VAR_TEMP 
+      tempSpeed : Real;
+      aux_speedsp : Real;
+      auxActSpeed : Real;
+      auxActCurrent : Real;
+      tempRefValueInvalid : Bool;
+      tempSendBuf : Array[0..5] of Word;
+      tempRecvBuf : Array[0..5] of Word;
+      userPZD1 : Word;
+      userPZD2 : Word;
+      userPZD3 : Word;
+      userPZD4 : Word;
+   END_VAR
+
+   VAR CONSTANT 
+      MAX_INT : Int := 16#7FFF;
+      MIN_INT : Int := 16#8000;
+      NO_ERROR : Int := 16#7002;
+      REF_CURRRENT_INVALID : Int := 16#7010;
+      REF_TORQUE_INVALID : Int := 16#7011;
+      REF_VALUES_INVALID : Int := 16#7013;
+      WARNING_WARN_CODE : Int := 16#7005;
+      REF_SPEED_INVALID : Int := 16#8001;
+      ERROR_DRIVE : Int := 16#8401;
+      ERROR_LOCKOUT : Int := 16#8402;
+      ERROR_DPREAD : Int := 16#8600;
+      ERROR_DPWRITE : Int := 16#8601;
+      ERROR_FAULT_CODE : Int := 16#8800;
+      STW1 : USInt := 0;
+      ZSW1 : USInt := 0;
+      NSOLL_A : USInt := 1;
+      RPM_REF : Real := 1500.0;   // P2000
+      AMP_REF : Real := 11.08;   // P0640
+   END_VAR
+
+
+BEGIN
+	//=============================================================================
+	//Change log table:
+	//Version  Date       Expert in charge  Changes applied
+	//07.11.2025 (Gabriel S BUCH) Added reverse direction + power output
+	//=============================================================================
+	//OBS: SP velocidade de 0 a 100%
+	
+	//************************************* SEND TELEGRAM TO DRIVE *************************************
+	REGION SEND TELEGRAM
+	    
+	    // Prepare PZD1 (STW1)
+	    #tempSendBuf[#STW1].%X0 := #fwd OR #bwd;        //OFF1 Operating condition - habilita
+	    #tempSendBuf[#STW1].%X1 := #safety;             //OFF2 Operating condition
+	    #tempSendBuf[#STW1].%X2 := #safety;             //OFF3 Quick stop          - condição de parada ***
+	    #tempSendBuf[#STW1].%X3 := #safety;             //Enable Operation
+	    #tempSendBuf[#STW1].%X4 := #safety;             //Enable ramp-function generator
+	    #tempSendBuf[#STW1].%X5 := #safety;             //Continue ramp-function generator
+	    #tempSendBuf[#STW1].%X6 := #safety;             //Enable speed setpoint
+	    #tempSendBuf[#STW1].%X7 := #ack;                //reset
+	    #tempSendBuf[#STW1].%X10 := TRUE;               // Control by PLC
+	    #tempSendBuf[#STW1].%X11 := #bwd;               //Direction reversal
+	    //#tempSendBuf[#STW1].%X13 := #configAxis.%X7; 
+	    //#tempSendBuf[#STW1].%X14 := #configAxis.%X8; 
+	    //0100 0111 1111
+	    
+	    
+	    REGION SPEED CONTROL
+	        
+	        //#aux_speedsp := SCALE_X(MIN := 0, VALUE := #speedSp, MAX := 1.2);
+	        
+	        // Speed
+	        #tempSpeed := #speedSp * 330;
+	        
+	        // Reversão de giro
+	        IF #bwd THEN
+	            #tempSpeed := - #tempSpeed;
+	        END_IF;
+	        
+	        // Limites de conversão REAL -> INT
+	        IF #tempSpeed > #MAX_INT THEN
+	            #tempSpeed := #MAX_INT;
+	        ELSIF #tempSpeed < #MIN_INT THEN
+	            #tempSpeed := #MIN_INT;
+	        END_IF;
+	        
+	        #tempSendBuf[#NSOLL_A] := INT_TO_WORD(REAL_TO_INT(#tempSpeed));
+	        
+	    END_REGION ;
+	    
+	    #tempSendBuf[2] := #userPZD1;
+	    #tempSendBuf[3] := #userPZD2;
+	    #tempSendBuf[4] := #userPZD3;
+	    #tempSendBuf[5] := #userPZD4;
+	    
+	    // Enviar telegrama para o inversor
+	    #diagId := DPWR_DAT(LADDR := #HWID, RECORD := #tempSendBuf);
+	    
+	    // Tratamento de erro na escrita
+	    IF #diagId <> 0 THEN
+	        #error := TRUE;
+	        #status := #ERROR_DPWRITE;
+	        
+	        // Resetar saídas
+	        #actSpeed := 0;
+	        #actCurrent := 0;
+	        #warnCode := 0;
+	        #faultCode := 0;
+	        RETURN;
+	    END_IF;
+	    
+	END_REGION ;
+	
+	
+	//************************************* RECEIVED TELEGRAM FROM DRIVE *************************************
+	REGION RECEIVED TELEGRAM
+	    // Receber telegrama do inversor
+	    #diagId := DPRD_DAT(LADDR := #HWID, RECORD => #tempRecvBuf);
+	    
+	    #tempRecvBuf_display := #tempRecvBuf;
+	    
+	    // Tratamento de erro na leitura
+	    IF #diagId <> 0 THEN
+	        #error := TRUE;
+	        #status := #ERROR_DPREAD;
+	        
+	        // Resetar saídas
+	        #actSpeed := 0;
+	        #actCurrent := 0;
+	        #warnCode := 0;
+	        #faultCode := 0;
+	        RETURN;
+	    END_IF;
+	    
+	    // Análise ZSW1
+	    #axisEnabled := #tempRecvBuf[#ZSW1].%X2;
+	    #lockout := #tempRecvBuf[#ZSW1].%X6;
+	    #error := #tempRecvBuf[#ZSW1].%X3 OR #tempRecvBuf[#ZSW1].%X6;
+	    
+	    IF #tempRecvBuf[#ZSW1].%X3 THEN
+	        #status := #ERROR_DRIVE;
+	    ELSIF #tempRecvBuf[#ZSW1].%X6 THEN
+	        #status := #ERROR_LOCKOUT;
+	    ELSE
+	        #status := #NO_ERROR;
+	    END_IF;
+	    
+	   
+	    // Códigos de aviso e falha
+	    #warnCode := WORD_TO_UINT(#tempRecvBuf[4]);
+	    IF #warnCode <> 0 AND NOT #error THEN
+	        #status := #WARNING_WARN_CODE;
+	    END_IF;
+	    
+	    #faultCode := WORD_TO_UINT(#tempRecvBuf[5]);
+	    IF #faultCode <> 0 THEN
+	        #error := TRUE;
+	        #status := #ERROR_FAULT_CODE;
+	    END_IF;
+	    
+	END_REGION ;
+	
+	
+	REGION OUTPUT SPEED AND CURRENT
+	    
+	    //Velocidade rpm
+	    #auxActSpeed := NORM_X(MIN := 0, VALUE := #tempRecvBuf[1], MAX := 16384);
+	    #actSpeed := REAL_TO_DINT(SCALE_X(MIN := 0, VALUE := #auxActSpeed, MAX := #RPM_REF));//REFERENCIA DE VELOCIDADE = P2000
+	    
+	    // Corrente amp
+	    #auxActCurrent := NORM_X(MIN := 0, VALUE := #tempRecvBuf[2], MAX := 16384);
+	    #actCurrent := REAL_TO_DINT(SCALE_X(MIN := 0, VALUE := #auxActCurrent, MAX := #AMP_REF)); //REFERENCIA DE CORRENTE = P0640
+	    
+	END_REGION ;
+	
+	
+END_FUNCTION_BLOCK
+
