@@ -24,7 +24,7 @@ DATA_BLOCK "delay_rot_on"
 {InstructionName := 'IEC_TIMER';
  LibVersion := '1.0';
  S7_Optimized_Access := 'TRUE' }
-AUTHOR : Simatic
+AUTHOR : Gabriel S Buch
 FAMILY : IEC
 NAME : IEC_TMR
 VERSION : 1.0
@@ -75,101 +75,105 @@ VERSION : 0.1
 
 
 BEGIN
-	REGION Timer operations
-	    
-	    //delay of starting motor
-	    #aux_delay_starting := INT_TO_TIME(#motor.delay_starting * 1000);
-	    
-	    
-	    #motor.timer[0].TON(IN := #motor.output_motor,
-	                        PT := #aux_delay_starting,
-	                        Q => #aux_timer[0]);
-	    
-	    
-	    
-	    //delay for sensor rotation on
-	    #motor.timer[1].TON(IN := #motor.output_motor AND #motor.sensor_rot OR #motor.output_motor AND #motor.inv_run,
-	                        PT := #delay_sensor_rot_on,
-	                        Q => #aux_timer[1]);
-	    
-	    //delay for sensor rotation off
-	    #motor.timer[2].TON(IN := #motor.output_motor AND NOT #motor.sensor_rot OR #motor.output_motor AND NOT #motor.inv_run,
-	                        PT := #delay_sensor_rot_off,
-	                        Q => #aux_timer[2]);
-	    
-	                     END_REGION ;
-	
-	REGION Motor ready
-	    //motor ready
-	    IF #safety AND NOT #motor.fault THEN
-	        #motor.ready := true;
-	    ELSE
-	        #motor.ready := false;
-	    END_IF;
-	    
-	END_REGION ;
-	
-	REGION Fault motor
-	    //Motor general fault
-	    IF #motor.fault_djm OR #motor.fault_feedback OR #motor.inv_fault THEN
-	        #motor.fault := true;
-	    END_IF;
-	    
-	    //Fault starting and not feedback
-	    IF #motor.output_motor AND #motor.timer[0].Q AND NOT #motor.motor_running THEN
-	        #motor.fault_feedback := true;
-	    END_IF;
-	    
-	    //Fault circuit brack
-	    IF NOT #motor.djm THEN
-	        #motor.fault_djm := true;
-	    END_IF;
-	    
-	    //reset faults
-	    IF #ack THEN
-	        #motor.fault := false;
-	        #motor.fault_djm := false;
-	        #motor.fault_feedback := false;
-	    END_IF;
-	    
-	END_REGION ;
-	
-	REGION Feedback motor running
-	    
-	    IF #motor.output_motor AND #motor.km AND #motor.timer[0].Q THEN
-	        
-	        IF NOT "delay_rot_off".Q AND NOT "delay_rot_on".Q OR
-	            NOT "delay_rot_off".Q AND #motor.inv_run THEN
-	            
-	            #motor.motor_running := TRUE;
-	            
-	        END_IF;
-	        
-	    ELSE
-	        #motor.motor_running := FALSE;
-	    END_IF;
-	     
-	END_REGION ;
-	
-	REGION Turn on motor
-	    
-	    IF #motor.ready THEN
-	        
-	        IF #mode AND #motor.auto_turn_on OR //auto
-	            NOT #mode AND #motor.man_turn_on THEN //manual
-	            
-	            #motor.output_motor := true;
-	        END_IF;
-	    ELSE
-	        #motor.output_motor := false;
-	    END_IF;
-	    
-	END_REGION ;
-	
-	
-	//Reset do acionamento manual quando seleciona o automatico
-	IF #mode THEN
-	    #motor.man_turn_on := false;
-	END_IF;
-END_FUNCTION
+
+REGION Timer operations
+    
+    //delay of starting motor
+    #aux_delay_starting := INT_TO_TIME(#motor.delay_starting * 1000);
+    
+    
+    #motor.timer[0].TON(IN := #motor.output_motor,
+                        PT := #aux_delay_starting,
+                        Q => #aux_timer[0]);
+    
+    
+    
+    //delay for sensor rotation on
+    #motor.timer[1].TON(IN := #motor.output_motor AND #motor.sensor_rot OR #motor.output_motor AND #motor.inv_run,
+                        PT := #delay_sensor_rot_on,
+                        Q => #aux_timer[1]);
+    
+    //delay for sensor rotation off
+    #motor.timer[2].TON(IN := #motor.output_motor AND NOT #motor.sensor_rot OR #motor.output_motor AND NOT #motor.inv_run,
+                        PT := #delay_sensor_rot_off,
+                        Q => #aux_timer[2]);
+    
+                     END_REGION ;
+
+REGION Motor ready
+    //motor ready
+    IF #safety AND NOT #motor.fault THEN
+        #motor.ready := true;
+    ELSE
+        #motor.ready := false;
+    END_IF;
+    
+END_REGION ;
+
+REGION Feedback motor running
+    
+    IF #motor.output_motor AND #motor.km AND #motor.timer[0].Q THEN
+        
+        IF NOT #motor.timer[1].Q AND NOT #motor.timer[2].Q AND NOT #motor.inv_run OR
+            NOT #motor.timer[1].Q AND NOT #motor.timer[2].Q AND #motor.inv_run THEN
+            #motor.motor_running := TRUE;
+        ELSE
+            #motor.motor_running := FALSE;
+        END_IF;
+    ELSE
+        #motor.motor_running := FALSE;
+    END_IF;
+     
+END_REGION ;
+
+REGION Turn on motor
+    
+    IF #motor.ready THEN
+        
+        IF #mode AND #motor.auto_turn_on OR //auto
+            NOT #mode AND #motor.man_turn_on THEN //manual
+            #motor.output_motor := true;
+        ELSE
+            #motor.output_motor := false;
+        END_IF;
+    ELSE
+        #motor.output_motor := false;
+    END_IF;
+    
+END_REGION ;
+
+REGION Fault motor
+    
+    //Fault starting and not feedback
+    IF #motor.output_motor AND #motor.timer[0].Q AND NOT #motor.motor_running THEN
+        #motor.fault_feedback := true;
+    END_IF;
+    
+    //Fault circuit break
+    IF NOT #motor.djm THEN
+        #motor.fault_djm := true;
+    ELSE
+        #motor.fault_djm := false;
+    END_IF;
+    
+    //Motor general fault
+    IF #motor.fault_djm OR #motor.fault_feedback OR #motor.inv_fault THEN
+        #motor.fault := true;
+    ELSE
+        #motor.fault := false;
+    END_IF;
+    
+END_REGION ;
+
+//reset faults
+IF #ack THEN
+    #motor.fault_djm := false;
+    #motor.fault_feedback := false;
+END_IF;
+
+//Manual reset when automatic mode is selected or motor malfunctions.
+IF #mode OR #motor.fault THEN
+    #motor.man_turn_on := false;
+END_IF;
+
 
